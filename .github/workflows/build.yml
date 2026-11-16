@@ -1,0 +1,59 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Descomprimir el proyecto
+        run: |
+          ls -la
+          unzip -q thinktwice.zip -d proyecto
+          ls -la proyecto/thinktwice
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Preparar Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.3
+
+      - name: Pruebas unitarias
+        working-directory: proyecto/thinktwice
+        run: gradle testDebugUnitTest --no-daemon
+
+      - name: Compilar APK debug
+        working-directory: proyecto/thinktwice
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thinktwice-apk
+          path: proyecto/thinktwice/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publicar en Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp proyecto/thinktwice/app/build/outputs/apk/debug/app-debug.apk thinktwice.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest thinktwice.apk --title "thinktwice (ultima compilacion)" --notes "APK de depuracion de thinktwice"
